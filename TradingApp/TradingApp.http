@@ -1,0 +1,42 @@
+@TradingApp_HostAddress = https://localhost:7065
+
+### Register (default role: Viewer)
+POST {{TradingApp_HostAddress}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "trader@example.com",
+  "password": "SecurePass123!",
+  "firstName": "Max",
+  "lastName": "Mustermann"
+}
+
+### Login
+# @name login
+POST {{TradingApp_HostAddress}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@tradingapp.local",
+  "password": "Admin123!ChangeMe"
+}
+
+### Current user
+GET {{TradingApp_HostAddress}}/api/v1/auth/me
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### Refresh tokens
+POST {{TradingApp_HostAddress}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{login.response.body.refreshToken}}"
+}
+
+### Revoke refresh token (logout)
+POST {{TradingApp_HostAddress}}/api/v1/auth/revoke
+Content-Type: application/json
+
+{
+  "refreshToken": "{{login.response.body.refreshToken}}"
+}

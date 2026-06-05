@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tradingapp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tradingapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - tradingapp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tradingapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  api:
+    build:
+      context: ./TradingApp
+      dockerfile: Dockerfile
+    image: tradingapp-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5181
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=tradingapp;Username=postgres;Password=postgres
+      # Kestrel certificate (PFX) - mount ./certs/localhost.pfx to /https/localhost.pfx
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=/https/localhost.pfx
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=changeit
+    ports:
+      - "5181:5181"
+      - "7065:7065"
+    restart: unless-stopped
+    volumes:
+      - ./certs:/https:ro
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: tradingapp-frontend:local
+    ports:
+      - "3000:80"
+      - "3443:443"
+    restart: unless-stopped
+    volumes:
+      - ./certs:/etc/ssl/certs:ro
+
+volumes:
+  tradingapp_pgdata:

@@ -1,0 +1,48 @@
+---
+description: Zentrale Projektregeln für die Trading-Plattform (Architektur, Code-Qualität, Tests)
+alwaysApply: true
+---
+
+# TradingApp – Projektregeln
+
+Diese Regeln gelten für alle Änderungen an diesem Repository.
+
+## Scope & Architektur
+
+- **Nur Aufgaben-relevante Dateien ändern** — keine Refactorings oder „Aufräumen“ in Dateien, die nicht zur aktuellen Aufgabe gehören.
+- **Keine Architekturentscheidungen eigenständig ändern** — Layering, Bounded Contexts, Datenmodell und Technologiewahl nur umsetzen oder erweitern, wenn es Teil der expliziten Anforderung ist; bei Abweichungsbedarf nachfragen.
+
+## Schichten & Businesslogik
+
+- **Keine Geschäftslogik in Controllern** — Controller nur für HTTP (Routing, Validierung, Statuscodes, Delegation an Services).
+- **Dependency Injection** — Abhängigkeiten über Interfaces und `IServiceCollection`-Registrierung; keine `new` für Services/Infrastruktur im Application-Code.
+- **Services für Businesslogik** — Use Cases und Domänenorchestrierung in dedizierten Service-Klassen (oder Application-Layer), nicht in `Program.cs` oder Controllern.
+- **Entity Framework Core** — Persistenz über `DbContext`, Repositories nur wenn bereits etabliert; Migrations bei Schemaänderungen.
+
+## Qualität
+
+- **Immer Unit Tests** — neue oder geänderte Businesslogik mit Unit Tests abdecken (xUnit); keine trivialen Tests.
+- **XML-Dokumentation** — alle **öffentlichen** Klassen, Interfaces, Methoden und Properties mit `///`-Kommentaren (deutsch oder englisch, konsistent im betroffenen Bereich).
+- **Produktionsreifer Code** — robuste Validierung, klare Fehlerbehandlung, keine Hardcoded-Secrets, keine Debug-Hacks.
+
+## Unklare Anforderungen
+
+- **Nachfragen**, wenn Scope, Verhalten, Schnittstellen oder Architektur nicht eindeutig sind — nicht raten und nicht „mitliefern“, was nicht angefragt wurde.
+
+## Kurzbeispiele
+
+```csharp
+// ❌ Geschäftslogik im Controller
+[HttpPost]
+public async Task<IActionResult> PlaceOrder(OrderDto dto) {
+    var position = await _db.Positions.FindAsync(...);
+    position.Quantity += dto.Quantity; // ...
+}
+
+// ✅ Delegation an Service
+[HttpPost]
+public async Task<IActionResult> PlaceOrder(OrderDto dto, CancellationToken ct) {
+    var result = await _orderService.PlaceOrderAsync(dto, ct);
+    return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
+}
+```

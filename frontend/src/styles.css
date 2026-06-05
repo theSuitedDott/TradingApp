@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-gray-900 text-gray-100 font-sans;
+}
+
+.app { @apply h-full flex flex-col; }
+.topbar { @apply flex items-center justify-between px-6 py-3 bg-gray-800 border-b border-gray-700; }
+.sidebar { @apply w-64 bg-gray-900 p-4 space-y-4 min-h-screen; }
+.content { @apply flex-1 p-6; }
+.dashboard { @apply flex; }
+.login { @apply flex items-center justify-center h-screen; }
+.login form { @apply bg-gray-800 p-8 rounded-lg shadow-lg w-96 space-y-3; }
+.orderForm { @apply bg-gray-800 p-4 rounded mb-4; }
+.card { @apply bg-gray-800 p-4 rounded shadow; }
+
