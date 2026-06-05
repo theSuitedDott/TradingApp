@@ -7,6 +7,8 @@ using TradingApp.Constants;
 using TradingApp.Data;
 using TradingApp.Services;
 
+using TradingApp.Services.HistoricalData;
+
 namespace TradingApp.Extensions;
 
 public static class ServiceCollectionExtensions
@@ -30,6 +32,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthService, AuthService>();
+        
+        services.AddHttpClient("YahooFinance");
+        services.AddScoped<IHistoricalDataService, YahooFinanceHistoricalDataService>();
 
         return services;
     }

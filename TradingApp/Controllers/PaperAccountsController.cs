@@ -53,7 +53,7 @@ public sealed class PaperAccountsController(IPaperTradeAccountService accountSer
 
     private Guid GetUserId()
     {
-        var claim = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
         return Guid.Parse(claim!);
     }
 

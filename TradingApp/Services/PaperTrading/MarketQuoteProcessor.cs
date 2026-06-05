@@ -16,7 +16,8 @@ public sealed class MarketQuoteProcessor(
     IPortfolioValuationService valuationService,
     IPositionRiskMonitor riskMonitor,
     IPaperRiskExitService riskExitService,
-    IPaperTradingNotifier notifier) : IMarketQuoteProcessor
+    IPaperTradingNotifier notifier,
+    IMarketQuoteBroadcaster quoteBroadcaster) : IMarketQuoteProcessor
 {
     /// <inheritdoc />
     public async Task<ServiceResult<MarketQuoteProcessResult>> ProcessQuoteAsync(
@@ -97,6 +98,8 @@ public sealed class MarketQuoteProcessor(
         {
             await notifier.NotifyPortfolioUpdatedAsync(accountId, cancellationToken);
         }
+
+        await quoteBroadcaster.BroadcastQuoteAsync(tick, cancellationToken);
 
         return ServiceResult<MarketQuoteProcessResult>.Success(
             new MarketQuoteProcessResult(filledCount, portfolioIds.Count));

@@ -51,7 +51,8 @@ public sealed class PaperTradingTestFixture : IDisposable
             Valuation,
             riskMonitor,
             riskExit,
-            Notifier);
+            Notifier,
+            new NoOpMarketQuoteBroadcaster());
         AccountService = new PaperTradeAccountService(DbContext);
         OrderService = new PaperOrderService(
             DbContext,
@@ -84,6 +85,12 @@ public sealed class PaperTradingTestFixture : IDisposable
     public IPaperTradingNotifier Notifier { get; }
 
     public void Dispose() => DbContext.Dispose();
+
+    private sealed class NoOpMarketQuoteBroadcaster : IMarketQuoteBroadcaster
+    {
+        public Task BroadcastQuoteAsync(MarketQuoteTick tick, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
 
     private sealed class NoOpPaperTradingNotifier : IPaperTradingNotifier
     {

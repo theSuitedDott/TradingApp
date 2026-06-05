@@ -25,6 +25,7 @@ builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddApplicationServices();
 builder.Services.AddPaperTrading(builder.Configuration);
 builder.Services.AddMarketDataFeed(builder.Configuration);
+builder.Services.AddInstitutionalSetupScanner(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddSignalR();
 // CORS for local frontend development (Vite / Docker nginx)

@@ -15,4 +15,8 @@ public static class PaperTradingErrorCodes
     public const string AccountInactive = "account_inactive";
     public const string DuplicateClientOrderId = "duplicate_client_order_id";
     public const string AccountNameExists = "account_name_exists";
+    public const string InvalidDemoPreset = "invalid_demo_preset";
+    public const string MissingBrokerAccountId = "missing_broker_account_id";
+    public const string BrokerLinkExists = "broker_link_exists";
+    public const string BrokerNameExists = "broker_name_exists";
 }

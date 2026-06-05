@@ -25,9 +25,11 @@ public static class PaperTradingServiceCollectionExtensions
         services.AddScoped<IPaperRiskExitService, PaperRiskExitService>();
         services.AddScoped<IMarketQuoteProcessor, MarketQuoteProcessor>();
         services.AddScoped<IPaperTradeAccountService, PaperTradeAccountService>();
+        services.AddScoped<IDemoTradingAccountService, DemoTradingAccountService>();
         services.AddScoped<IPaperOrderService, PaperOrderService>();
         services.AddScoped<IMarketDataService, MarketDataService>();
         services.AddScoped<IPaperTradingNotifier, PaperTradingNotifier>();
+        services.AddScoped<IMarketQuoteBroadcaster, MarketQuoteBroadcaster>();
 
         services.AddScoped<IOrderExecutor, PaperOrderExecutor>();
         services.AddScoped<IOrderExecutor, BrokerOrderExecutor>();

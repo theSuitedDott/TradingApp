@@ -41,7 +41,7 @@ public sealed class AuthService(
             PasswordHash = passwordHasher.Hash(request.Password),
             FirstName = request.FirstName?.Trim(),
             LastName = request.LastName?.Trim(),
-            Role = UserRole.Viewer,
+            Role = UserRole.Trader,
             IsActive = true,
             CreatedAt = now,
             UpdatedAt = now

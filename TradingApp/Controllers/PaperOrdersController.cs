@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TradingApp.DTOs.Paper;
@@ -55,7 +56,11 @@ public sealed class PaperOrdersController(IPaperOrderService orderService) : Con
         return MapResult(result, StatusCodes.Status200OK);
     }
 
-    private Guid GetUserId() => Guid.Parse(User.FindFirst(JwtRegisteredClaimNames.Sub)!.Value);
+    private Guid GetUserId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+        return Guid.Parse(claim!);
+    }
 
     private IActionResult MapResult<T>(ServiceResult<T> result, int successStatus)
     {

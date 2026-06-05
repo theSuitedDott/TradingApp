@@ -22,4 +22,8 @@
         <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.12.0"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <ProjectReference Include="..\TradingApp.TradingEngine\TradingApp.TradingEngine.csproj"/>
+    </ItemGroup>
+
 </Project>
