@@ -18,6 +18,7 @@ public sealed class InstitutionalSetupInput
     /// <param name="dxyCandles">DXY candles for macro confirmation.</param>
     /// <param name="vixCandles">VIX candles for macro confirmation.</param>
     /// <param name="rsiPeriod">RSI period used for divergence analysis.</param>
+    /// <param name="evaluationTime">Historical evaluation timestamp for backtests; live scans use the system clock.</param>
     public InstitutionalSetupInput(
         string symbol,
         string exchange,
@@ -25,7 +26,8 @@ public sealed class InstitutionalSetupInput
         IReadOnlyList<Candle> entryTimeframeCandles,
         IReadOnlyList<Candle> dxyCandles,
         IReadOnlyList<Candle> vixCandles,
-        int rsiPeriod = 14)
+        int rsiPeriod = 14,
+        DateTimeOffset? evaluationTime = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
         ArgumentException.ThrowIfNullOrWhiteSpace(exchange);
@@ -42,6 +44,7 @@ public sealed class InstitutionalSetupInput
         DxyCandles = dxyCandles;
         VixCandles = vixCandles;
         RsiPeriod = rsiPeriod;
+        EvaluationTime = evaluationTime;
     }
 
     /// <summary>Traded instrument symbol.</summary>
@@ -64,4 +67,7 @@ public sealed class InstitutionalSetupInput
 
     /// <summary>RSI period used for divergence analysis.</summary>
     public int RsiPeriod { get; }
+
+    /// <summary>Point-in-time for <see cref="InstitutionalSetupResult.DetectedAt"/> (backtest uses candle time).</summary>
+    public DateTimeOffset? EvaluationTime { get; }
 }

@@ -5,9 +5,8 @@ namespace TradingApp.TradingEngine.Setup;
 
 /// <summary>
 /// Composes the six condition detectors into the full institutional setup ("institutional cutting").
-/// A trade opportunity is only emitted when every condition is satisfied; the entry is anchored in
-/// the Fair Value Gap, the stop-loss beyond the swept liquidity, and the take-profit at a fixed
-/// reward-to-risk multiple.
+/// A trade opportunity is only emitted when every condition is satisfied. Entry is at the third
+/// push extreme, stop-loss beyond the swept liquidity, take-profit at the prior swing peak.
 /// </summary>
 public sealed class InstitutionalSetupStrategy : IInstitutionalSetupStrategy
 {
@@ -71,10 +70,17 @@ public sealed class InstitutionalSetupStrategy : IInstitutionalSetupStrategy
 
     /// <inheritdoc />
     public InstitutionalSetupResult Evaluate(InstitutionalSetupInput input)
+        => EvaluateCore(input, shortCircuit: true);
+
+    /// <inheritdoc />
+    public InstitutionalSetupResult EvaluateAllConditions(InstitutionalSetupInput input)
+        => EvaluateCore(input, shortCircuit: false);
+
+    private InstitutionalSetupResult EvaluateCore(InstitutionalSetupInput input, bool shortCircuit)
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var now = _timeProvider.GetUtcNow();
+        var now = input.EvaluationTime ?? _timeProvider.GetUtcNow();
         var conditions = new List<ConditionCheck>(ConditionNames.Ordered.Count);
 
         // 1. Clear H4 trend.
@@ -86,17 +92,19 @@ public sealed class InstitutionalSetupStrategy : IInstitutionalSetupStrategy
             trendPassed ? $"Clear H4 {bias} trend." : "No clear H4 trend (structure not aligned)."));
         if (!trendPassed)
         {
-            return Incomplete(input, bias, conditions, now);
+            return shortCircuit
+                ? Incomplete(input, bias, conditions, now)
+                : Finish(input, bias, conditions, now);
         }
 
-        // 2. Three-push exhaustion with RSI divergence.
+        // 2. Three-push exhaustion (no RSI — entry at 3rd push, target prior peak).
         var rsi = _rsiCalculator.Calculate(input.EntryTimeframeCandles, input.RsiPeriod);
         var exhaustion = _exhaustionDetector.Detect(input.EntryTimeframeCandles, bias, rsi);
         conditions.Add(new ConditionCheck(
             ConditionNames.Exhaustion,
             exhaustion is not null,
-            exhaustion?.Detail ?? "Correction has not exhausted in three diverging pushes."));
-        if (exhaustion is null)
+            exhaustion?.Detail ?? "Kein abgeschlossener 3-Push in Trendrichtung."));
+        if (exhaustion is null && shortCircuit)
         {
             return Incomplete(input, bias, conditions, now);
         }
@@ -107,7 +115,7 @@ public sealed class InstitutionalSetupStrategy : IInstitutionalSetupStrategy
             ConditionNames.LiquiditySweep,
             sweep is not null,
             sweep?.Detail ?? "Final push did not sweep a liquidity level."));
-        if (sweep is null)
+        if (sweep is null && shortCircuit)
         {
             return Incomplete(input, bias, conditions, now);
         }
@@ -118,20 +126,25 @@ public sealed class InstitutionalSetupStrategy : IInstitutionalSetupStrategy
             ConditionNames.Displacement,
             displacement is not null,
             displacement?.Detail ?? "No displacement candle in trend direction."));
-        if (displacement is null)
+        if (displacement is null && shortCircuit)
         {
             return Incomplete(input, bias, conditions, now);
         }
 
         // 5. Fair Value Gap entry zone.
-        var fvg = _fvgDetector.Detect(input.EntryTimeframeCandles, bias, displacement.Index);
+        var displacementIndex = displacement?.Index ?? -1;
+        var fvg = displacement is not null
+            ? _fvgDetector.Detect(input.EntryTimeframeCandles, bias, displacementIndex)
+            : null;
         conditions.Add(new ConditionCheck(
             ConditionNames.FairValueGap,
             fvg is not null,
             fvg is not null
                 ? $"Fair Value Gap entry zone {fvg.Lower:F2} – {fvg.Upper:F2}."
-                : "Displacement left no Fair Value Gap to enter."));
-        if (fvg is null)
+                : displacement is null
+                    ? "No displacement candle to anchor a Fair Value Gap."
+                    : "Displacement left no Fair Value Gap to enter."));
+        if (fvg is null && shortCircuit)
         {
             return Incomplete(input, bias, conditions, now);
         }
@@ -142,44 +155,72 @@ public sealed class InstitutionalSetupStrategy : IInstitutionalSetupStrategy
             ConditionNames.MacroConfirmation,
             macro.IsConfirmed,
             macro.Detail));
-        if (!macro.IsConfirmed)
+        if (!macro.IsConfirmed && shortCircuit)
         {
             return Incomplete(input, bias, conditions, now);
         }
 
-        var (entry, stopLoss, takeProfit) = BuildLevels(bias, fvg, sweep);
+        if (exhaustion is not null && fvg is not null && sweep is not null && macro.IsConfirmed && conditions.All(c => c.Passed))
+        {
+            var (entry, stopLoss, takeProfit) = BuildLevels(bias, exhaustion, sweep);
+            return new InstitutionalSetupResult(
+                input.Symbol,
+                input.Exchange,
+                bias,
+                conditions,
+                now,
+                fvg,
+                entry,
+                stopLoss,
+                takeProfit);
+        }
+
+        return Finish(input, bias, conditions, now, exhaustion, sweep);
+    }
+
+    private InstitutionalSetupResult Finish(
+        InstitutionalSetupInput input,
+        MarketBias bias,
+        List<ConditionCheck> conditions,
+        DateTimeOffset now,
+        ExhaustionResult? exhaustion = null,
+        SweepResult? sweep = null)
+    {
+        if (exhaustion is null)
+        {
+            return new InstitutionalSetupResult(input.Symbol, input.Exchange, bias, conditions, now);
+        }
+
+        var (entry, stopLoss, takeProfit) = BuildLevels(bias, exhaustion, sweep);
         return new InstitutionalSetupResult(
             input.Symbol,
             input.Exchange,
             bias,
             conditions,
             now,
-            fvg,
-            entry,
-            stopLoss,
-            takeProfit);
+            entryPrice: entry,
+            stopLossPrice: stopLoss,
+            takeProfitPrice: takeProfit);
     }
 
     private (decimal Entry, decimal StopLoss, decimal TakeProfit) BuildLevels(
         MarketBias bias,
-        PriceZone fvg,
-        SweepResult sweep)
+        ExhaustionResult exhaustion,
+        SweepResult? sweep)
     {
-        var entry = fvg.Midpoint;
+        var entry = exhaustion.LastPush.Price;
         if (bias == MarketBias.Bullish)
         {
-            var stopLoss = sweep.ExtremePrice * (1m - _stopBufferFraction);
-            var risk = entry - stopLoss;
-            var takeProfit = entry + (_rewardToRisk * risk);
-            return (entry, stopLoss, takeProfit);
+            var stopLoss = sweep is not null
+                ? sweep.ExtremePrice * (1m - _stopBufferFraction)
+                : entry * (1m - _stopBufferFraction);
+            return (entry, stopLoss, exhaustion.PriorPeakPrice);
         }
-        else
-        {
-            var stopLoss = sweep.ExtremePrice * (1m + _stopBufferFraction);
-            var risk = stopLoss - entry;
-            var takeProfit = entry - (_rewardToRisk * risk);
-            return (entry, stopLoss, takeProfit);
-        }
+
+        var bearStop = sweep is not null
+            ? sweep.ExtremePrice * (1m + _stopBufferFraction)
+            : entry * (1m + _stopBufferFraction);
+        return (entry, bearStop, exhaustion.PriorPeakPrice);
     }
 
     private static InstitutionalSetupResult Incomplete(

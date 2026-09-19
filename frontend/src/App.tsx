@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
@@ -13,6 +13,34 @@ import TopbarUser from './components/TopbarUser'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SetupNotificationProvider, useSetupNotifications } from './context/SetupNotificationContext'
 import { ToastProvider } from './context/ToastContext'
+import { requestNotificationPermission } from './utils/browserNotify'
+
+function NotificationPermissionButton() {
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
+    'Notification' in window ? Notification.permission : 'unsupported'
+  )
+
+  useEffect(() => {
+    if (!('Notification' in window)) return
+    setPermission(Notification.permission)
+  }, [])
+
+  if (permission === 'granted' || permission === 'unsupported') return null
+
+  return (
+    <button
+      type="button"
+      className="topbar-notify-btn"
+      title="Browser-Benachrichtigungen aktivieren (erscheinen auch wenn Tab im Hintergrund ist)"
+      onClick={async () => {
+        const granted = await requestNotificationPermission()
+        setPermission(granted ? 'granted' : 'denied')
+      }}
+    >
+      🔔 Benachrichtigungen aktivieren
+    </button>
+  )
+}
 
 function AppShell() {
   const { isAuthenticated, onAuthSuccess, logout } = useAuth()
@@ -24,6 +52,7 @@ function AppShell() {
         <h1 className="text-lg font-semibold">TradingApp</h1>
         {isAuthenticated && (
           <div className="topbar-actions">
+            <NotificationPermissionButton />
             <TopbarUser />
             <button
             type="button"

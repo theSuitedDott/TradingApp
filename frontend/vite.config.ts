@@ -6,16 +6,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Proxy API requests to backend HTTPS during development (Kestrel HTTPS at 7065)
+      // Proxy API requests to backend HTTP during development (Kestrel HTTP at 5181)
       '/api': {
-        target: 'https://localhost:7065',
+        target: 'http://localhost:5181',
         changeOrigin: true,
-        secure: false,
         rewrite: (path) => path.replace(/^\/api/, '/api')
       },
       // Proxy SignalR hub requests
       '/hubs': {
-        target: 'https://localhost:7065',
+        target: 'http://localhost:5181',
         changeOrigin: true,
         secure: false,
         ws: true

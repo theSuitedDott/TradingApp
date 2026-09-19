@@ -15,7 +15,7 @@ public sealed class InstitutionalSetupStrategyTests
         var sut = BuildStrategy(
             bias: MarketBias.Bullish,
             exhaustion: SampleExhaustion(),
-            sweep: new SweepResult(96m, 95m, "swept"),
+            sweep: new SweepResult(42m, 39m, "swept"),
             displacement: SampleDisplacement(),
             fvg: new PriceZone(100m, 102m),
             macroConfirmed: true);
@@ -27,7 +27,8 @@ public sealed class InstitutionalSetupStrategyTests
         Assert.Equal(6, result.Conditions.Count);
         Assert.All(result.Conditions, c => Assert.True(c.Passed));
         Assert.Equal(1m, result.Confidence);
-        Assert.Equal(101m, result.EntryPrice); // FVG midpoint
+        Assert.Equal(40m, result.EntryPrice); // 3rd push low from stub exhaustion
+        Assert.Equal(50m, result.TakeProfitPrice); // prior peak from stub
         Assert.NotNull(result.StopLossPrice);
         Assert.NotNull(result.TakeProfitPrice);
         Assert.True(result.StopLossPrice < result.EntryPrice);
@@ -52,6 +53,52 @@ public sealed class InstitutionalSetupStrategyTests
         Assert.False(result.Conditions[0].Passed);
         Assert.Equal(0m, result.Confidence);
         Assert.Null(result.EntryPrice);
+    }
+
+    [Fact]
+    public void Evaluate_UsesEvaluationTimeFromInput_WhenProvided()
+    {
+        var sut = BuildStrategy(
+            bias: MarketBias.Neutral,
+            exhaustion: null,
+            sweep: null,
+            displacement: null,
+            fvg: null,
+            macroConfirmed: false);
+
+        var historical = new DateTimeOffset(2026, 3, 15, 14, 0, 0, TimeSpan.Zero);
+        var input = new InstitutionalSetupInput(
+            "EUR_USD",
+            "OANDA",
+            TestCandles.RisingStructure(),
+            TestCandles.RisingStructure(),
+            TestCandles.FallingStructure(),
+            TestCandles.FallingStructure(),
+            evaluationTime: historical);
+
+        var result = sut.Evaluate(input);
+
+        Assert.Equal(historical, result.DetectedAt);
+    }
+
+    [Fact]
+    public void EvaluateAllConditions_WhenExhaustionMissing_StillEvaluatesLaterConditions()
+    {
+        var sut = BuildStrategy(
+            bias: MarketBias.Bullish,
+            exhaustion: null,
+            sweep: new SweepResult(96m, 95m, "swept"),
+            displacement: SampleDisplacement(),
+            fvg: new PriceZone(100m, 102m),
+            macroConfirmed: true);
+
+        var result = sut.EvaluateAllConditions(BuildInput());
+
+        Assert.False(result.IsSetup);
+        Assert.True(result.Conditions[0].Passed);
+        Assert.False(result.Conditions[1].Passed);
+        Assert.True(result.Conditions[2].Passed);
+        Assert.DoesNotContain(result.Conditions, c => c.Detail.Contains("Not evaluated", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -97,7 +144,10 @@ public sealed class InstitutionalSetupStrategyTests
             TestCandles.FallingStructure());
 
     private static ExhaustionResult SampleExhaustion()
-        => new([new SwingPoint(0, TestCandles.Of(0, 40m, 42m), isHigh: false)], "exhaustion");
+        => new(
+            [new SwingPoint(0, TestCandles.Of(0, 40m, 42m), isHigh: false)],
+            priorPeakPrice: 50m,
+            "exhaustion");
 
     private static DisplacementResult SampleDisplacement()
         => new(5, TestCandles.Of(5, 100m, 106m, 100m, 106m), 3m, "displacement");

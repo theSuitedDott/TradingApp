@@ -39,6 +39,8 @@ public sealed class MarketDataFeedWorker(
             _settings.IntervalMs);
 
         var intervalDelay = TimeSpan.FromMilliseconds(_settings.IntervalMs);
+        // OANDA batches one pricing request per poll cycle and applies its own delay.
+        var feedControlsPacing = string.Equals(feed.ProviderName, "OANDA", StringComparison.OrdinalIgnoreCase);
 
         await foreach (var tick in feed.StreamAsync(_settings.Symbols, stoppingToken)
             .ConfigureAwait(false))
@@ -49,7 +51,11 @@ public sealed class MarketDataFeedWorker(
             }
 
             await ProcessTickWithRetryAsync(tick, stoppingToken);
-            await Task.Delay(intervalDelay, stoppingToken).ConfigureAwait(false);
+
+            if (!feedControlsPacing)
+            {
+                await Task.Delay(intervalDelay, stoppingToken).ConfigureAwait(false);
+            }
         }
 
         logger.LogInformation("MarketDataFeedWorker stopped.");

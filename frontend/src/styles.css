@@ -34,6 +34,11 @@ body {
          hover:bg-red-950/50 hover:border-red-700/60 hover:text-red-200 transition-colors shrink-0;
 }
 .topbar-logout-icon { @apply w-4 h-4 shrink-0; }
+.topbar-notify-btn {
+  @apply inline-flex items-center gap-1.5 text-xs font-medium text-yellow-300
+         px-2.5 py-1.5 rounded-lg border border-yellow-700/50 bg-yellow-900/20
+         hover:bg-yellow-900/40 hover:border-yellow-500/60 transition-colors shrink-0;
+}
 
 /* Dashboard */
 .dashboard-page { @apply max-w-6xl space-y-6; }

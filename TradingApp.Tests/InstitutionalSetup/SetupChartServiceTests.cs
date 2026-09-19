@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TradingApp.Configuration;
 using TradingApp.DTOs.Setup;
@@ -73,20 +74,40 @@ public sealed class SetupChartServiceTests
             MaxOpportunities = 10
         });
 
+        var twelveData = new TwelveDataCandleService(
+            new StubHttpClientFactory(),
+            Options.Create(new TwelveDataSettings()),
+            NullLogger<TwelveDataCandleService>.Instance);
+
         return new SetupChartService(
-            new StubHistoricalDataService(),
+            twelveData,
+            new StubYahooHistoricalDataService(),
             new MockSetupCandleProvider(),
             new StubScanner(),
-            new TradeOpportunityStore(settings),
+            new TradeOpportunityStore(settings.Value.MaxOpportunities),
             quoteStore ?? new MarketQuoteStore(),
             settings);
     }
 
-    private sealed class StubHistoricalDataService : IHistoricalDataService
+    private sealed class StubYahooHistoricalDataService : YahooFinanceHistoricalDataService
     {
-        public Task<IReadOnlyList<Candle>> GetHistoricalCandlesAsync(
-            string symbol, string interval, string range, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<Candle>>(Array.Empty<Candle>());
+        public StubYahooHistoricalDataService()
+            : base(new StubHttpClientFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<YahooFinanceHistoricalDataService>.Instance)
+        {
+        }
+
+        public new Task<IReadOnlyList<Candle>> GetHistoricalCandlesAsync(
+            string symbol,
+            string interval,
+            string range,
+            int? candleCount = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Candle>>(Array.Empty<Candle>());
+    }
+
+    private sealed class StubHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new HttpClient();
     }
 
     private sealed class StubScanner : IInstitutionalSetupScanner
@@ -109,7 +130,10 @@ public sealed class SetupChartServiceTests
                 "Active",
                 Array.Empty<ConditionCheckDto>());
 
-            return new SetupAnalysisDto(symbol, exchange, "Bullish", 1m, true, Array.Empty<ConditionCheckDto>(), opportunity);
+            return new SetupAnalysisDto(
+                symbol, exchange, "Bullish", 1m, true, Array.Empty<ConditionCheckDto>(),
+                DateTimeOffset.UtcNow, opportunity.EntryPrice, opportunity.StopLossPrice,
+                opportunity.TakeProfitPrice, opportunity);
         }
 
         public Task<TradeOpportunityDto?> ScanAsync(CancellationToken cancellationToken = default) =>

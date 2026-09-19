@@ -36,16 +36,17 @@ public sealed class ThreePushExhaustionDetectorTests
     }
 
     [Fact]
-    public void Detect_WithoutRsiDivergence_ReturnsNull()
+    public void Detect_WithoutRsiDivergence_StillReturnsThreePush()
     {
         var candles = DownCorrection();
-        // RSI falls together with price -> no divergence.
         decimal?[] rsi = [50m, 45m, 40m, 42m, 35m, 44m, 30m, 50m];
         var sut = new ThreePushExhaustionDetector(swingStrength: 1);
 
         var result = sut.Detect(candles, MarketBias.Bullish, rsi);
 
-        Assert.Null(result);
+        Assert.NotNull(result);
+        Assert.Equal(3, result!.Pushes.Count);
+        Assert.True(result.PriorPeakPrice > result.LastPush.Price);
     }
 
     [Fact]

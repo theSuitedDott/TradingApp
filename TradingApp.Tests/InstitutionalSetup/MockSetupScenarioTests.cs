@@ -33,7 +33,8 @@ public sealed class MockSetupScenarioTests
         Assert.Equal(MarketBias.Bullish, result.Bias);
         Assert.Equal(6, result.Conditions.Count);
         Assert.All(result.Conditions, c => Assert.True(c.Passed, c.Detail));
-        Assert.Equal(109.75m, result.EntryPrice); // FVG midpoint 108.5 – 111
+        Assert.Equal(102m, result.EntryPrice); // 3rd push low
+        Assert.Equal(117m, result.TakeProfitPrice); // prior swing high before correction
         Assert.True(result.StopLossPrice < result.EntryPrice);
         Assert.True(result.TakeProfitPrice > result.EntryPrice);
     }

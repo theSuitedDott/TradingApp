@@ -3,9 +3,9 @@ using TradingApp.TradingEngine.Models;
 namespace TradingApp.TradingEngine.Setup;
 
 /// <summary>
-/// Detects a three-push corrective exhaustion with RSI divergence.
-/// For a bullish bias the correction is a down-move forming three lower swing lows
-/// whose drop sizes diminish while RSI prints higher lows (bullish divergence).
+/// Detects a three-push corrective exhaustion without RSI divergence.
+/// For a bullish bias the correction forms three lower swing lows with diminishing push sizes;
+/// entry is at the third push low, take-profit at the prior swing high.
 /// The mirror logic applies for a bearish bias.
 /// </summary>
 public sealed class ThreePushExhaustionDetector : IExhaustionDetector
@@ -39,11 +39,11 @@ public sealed class ThreePushExhaustionDetector : IExhaustionDetector
 
         var swings = SwingScanner.FindSwings(candles, _swingStrength);
         return bias == MarketBias.Bullish
-            ? DetectBullish(swings, rsi)
-            : DetectBearish(swings, rsi);
+            ? DetectBullish(swings)
+            : DetectBearish(swings);
     }
 
-    private static ExhaustionResult? DetectBullish(IReadOnlyList<SwingPoint> swings, IReadOnlyList<decimal?> rsi)
+    private static ExhaustionResult? DetectBullish(IReadOnlyList<SwingPoint> swings)
     {
         var lows = swings.Where(s => !s.IsHigh).TakeLast(3).ToList();
         if (lows.Count < 3)
@@ -51,19 +51,7 @@ public sealed class ThreePushExhaustionDetector : IExhaustionDetector
             return null;
         }
 
-        // Price prints progressively lower lows (the correction extends down).
         if (!(lows[0].Price > lows[1].Price && lows[1].Price > lows[2].Price))
-        {
-            return null;
-        }
-
-        if (!TryGetRsi(rsi, lows, out var rsiValues))
-        {
-            return null;
-        }
-
-        // Bullish RSI divergence: momentum prints higher lows against falling price.
-        if (!(rsiValues[0] < rsiValues[1] && rsiValues[1] < rsiValues[2]))
         {
             return null;
         }
@@ -73,13 +61,20 @@ public sealed class ThreePushExhaustionDetector : IExhaustionDetector
             return null;
         }
 
+        var priorPeak = FindPrecedingOpposite(swings, lows[0].Index, wantHigh: true);
+        if (priorPeak is null || priorPeak.Price <= lows[2].Price)
+        {
+            return null;
+        }
+
         return new ExhaustionResult(
             lows,
-            $"Three diminishing down-pushes with bullish RSI divergence " +
-            $"({rsiValues[0]:F1} → {rsiValues[1]:F1} → {rsiValues[2]:F1}).");
+            priorPeak.Price,
+            $"3-Push-Korrektur abgeschlossen: Einstieg am 3. Tief {lows[2].Price:F4}, " +
+            $"Ziel vorheriges Hoch {priorPeak.Price:F4}.");
     }
 
-    private static ExhaustionResult? DetectBearish(IReadOnlyList<SwingPoint> swings, IReadOnlyList<decimal?> rsi)
+    private static ExhaustionResult? DetectBearish(IReadOnlyList<SwingPoint> swings)
     {
         var highs = swings.Where(s => s.IsHigh).TakeLast(3).ToList();
         if (highs.Count < 3)
@@ -92,46 +87,22 @@ public sealed class ThreePushExhaustionDetector : IExhaustionDetector
             return null;
         }
 
-        if (!TryGetRsi(rsi, highs, out var rsiValues))
-        {
-            return null;
-        }
-
-        // Bearish RSI divergence: momentum prints lower highs against rising price.
-        if (!(rsiValues[0] > rsiValues[1] && rsiValues[1] > rsiValues[2]))
-        {
-            return null;
-        }
-
         if (!PushesAreDiminishing(swings, highs, isHighPush: true))
+        {
+            return null;
+        }
+
+        var priorTrough = FindPrecedingOpposite(swings, highs[0].Index, wantHigh: false);
+        if (priorTrough is null || priorTrough.Price >= highs[2].Price)
         {
             return null;
         }
 
         return new ExhaustionResult(
             highs,
-            $"Three diminishing up-pushes with bearish RSI divergence " +
-            $"({rsiValues[0]:F1} → {rsiValues[1]:F1} → {rsiValues[2]:F1}).");
-    }
-
-    private static bool TryGetRsi(
-        IReadOnlyList<decimal?> rsi,
-        IReadOnlyList<SwingPoint> points,
-        out decimal[] values)
-    {
-        values = new decimal[points.Count];
-        for (var i = 0; i < points.Count; i++)
-        {
-            var value = rsi[points[i].Index];
-            if (value is null)
-            {
-                return false;
-            }
-
-            values[i] = value.Value;
-        }
-
-        return true;
+            priorTrough.Price,
+            $"3-Push-Korrektur abgeschlossen: Einstieg am 3. Hoch {highs[2].Price:F4}, " +
+            $"Ziel vorheriges Tief {priorTrough.Price:F4}.");
     }
 
     private static bool PushesAreDiminishing(

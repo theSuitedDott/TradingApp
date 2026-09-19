@@ -1,5 +1,7 @@
 using TradingApp.Configuration;
+using TradingApp.Services.HistoricalData;
 using TradingApp.Services.InstitutionalSetup;
+using TradingApp.Services.PaperTrading;
 using TradingApp.TradingEngine.Indicators;
 using TradingApp.TradingEngine.Setup;
 
@@ -40,16 +42,35 @@ public static class InstitutionalSetupServiceCollectionExtensions
             new DxyVixConfirmationFilter(new SwingTrendFilter(swingStrength: 1)),
             sp.GetRequiredService<IRsiCalculator>()));
 
-        services.AddSingleton<IMockSetupCandleProvider, MockSetupCandleProvider>();
+        services.AddSingleton<MockSetupCandleProvider>();
+        services.AddSingleton<IMockSetupCandleProvider>(sp => sp.GetRequiredService<MockSetupCandleProvider>());
+
+        // ISetupCandleProvider: real Yahoo data when UseLiveData=true, mock data otherwise.
+        if (settings.UseLiveData)
+        {
+            services.AddScoped<ISetupCandleProvider, RealSetupCandleProvider>();
+        }
+        else
+        {
+            services.AddSingleton<ISetupCandleProvider>(sp => sp.GetRequiredService<MockSetupCandleProvider>());
+        }
+
         services.AddSingleton<ITradeOpportunityStore>(_ => new TradeOpportunityStore(settings.MaxOpportunities));
         services.AddSingleton<ISetupOpportunityNotifier, SetupOpportunityNotifier>();
+        services.AddSingleton<IExitAlertTracker, ExitAlertTracker>();
+        services.AddSingleton<IExitSignalNotifier, ExitSignalNotifier>();
         services.AddSingleton<IInstitutionalSetupScanner, InstitutionalSetupScanner>();
+        services.AddScoped<IPositionExitScanner, PositionExitScanner>();
         services.AddScoped<ISetupBacktestService, SetupBacktestService>();
+        services.AddScoped<TwelveDataCandleService>();
+        services.AddScoped<AlphaVantageCandleService>();
         services.AddScoped<ISetupChartService, SetupChartService>();
 
         services.AddScoped<ISetupExecutionService, SetupExecutionService>();
+        services.AddScoped<IOpenPositionLookup, OpenPositionLookup>();
 
         services.AddHostedService<InstitutionalSetupScannerWorker>();
+        services.AddHostedService<PositionExitScannerWorker>();
 
         return services;
     }

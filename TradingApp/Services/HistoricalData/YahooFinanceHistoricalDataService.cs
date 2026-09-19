@@ -5,12 +5,31 @@ namespace TradingApp.Services.HistoricalData;
 
 public interface IHistoricalDataService
 {
-    Task<IReadOnlyList<Candle>> GetHistoricalCandlesAsync(string symbol, string interval, string range, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Loads historical OHLC candles.
+    /// </summary>
+    /// <param name="symbol">Instrument symbol.</param>
+    /// <param name="interval">Candle interval (15m, 1h, 4h, 1d).</param>
+    /// <param name="range">Lookback range (e.g. 60d) when <paramref name="candleCount"/> is null.</param>
+    /// <param name="candleCount">When set, loads the last N candles via period1/period2 instead of range.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<Candle>> GetHistoricalCandlesAsync(
+        string symbol,
+        string interval,
+        string range,
+        int? candleCount = null,
+        CancellationToken cancellationToken = default);
 }
 
 public class YahooFinanceHistoricalDataService(IHttpClientFactory httpClientFactory, ILogger<YahooFinanceHistoricalDataService> logger) : IHistoricalDataService
 {
-    public async Task<IReadOnlyList<Candle>> GetHistoricalCandlesAsync(string symbol, string interval, string range, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<Candle>> GetHistoricalCandlesAsync(
+        string symbol,
+        string interval,
+        string range,
+        int? candleCount = null,
+        CancellationToken cancellationToken = default)
     {
         var client = httpClientFactory.CreateClient("YahooFinance");
         // Yahoo Finance requires a user agent
@@ -19,7 +38,19 @@ public class YahooFinanceHistoricalDataService(IHttpClientFactory httpClientFact
             client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
         }
 
-        var url = $"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={range}";
+        var encodedSymbol = Uri.EscapeDataString(symbol);
+        string url;
+        if (candleCount is > 0)
+        {
+            var period2 = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var period1 = period2 - (long)candleCount.Value * IntervalToSeconds(interval);
+            url = $"https://query2.finance.yahoo.com/v8/finance/chart/{encodedSymbol}?interval={interval}&period1={period1}&period2={period2}";
+        }
+        else
+        {
+            url = $"https://query2.finance.yahoo.com/v8/finance/chart/{encodedSymbol}?interval={interval}&range={range}";
+        }
+
         logger.LogInformation("Fetching historical data from {Url}", url);
 
         var response = await client.GetAsync(url, cancellationToken);
@@ -60,6 +91,21 @@ public class YahooFinanceHistoricalDataService(IHttpClientFactory httpClientFact
             }
         }
 
+        if (candleCount is > 0 && candles.Count > candleCount.Value)
+        {
+            return candles.TakeLast(candleCount.Value).ToList();
+        }
+
         return candles;
     }
+
+    private static int IntervalToSeconds(string interval) =>
+        interval.Trim().ToLowerInvariant() switch
+        {
+            "15m" => 900,
+            "1h" => 3_600,
+            "4h" => 14_400,
+            "1d" => 86_400,
+            _ => 3_600
+        };
 }

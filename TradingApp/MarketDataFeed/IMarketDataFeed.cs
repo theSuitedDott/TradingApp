@@ -4,7 +4,7 @@ namespace TradingApp.MarketDataFeed;
 
 /// <summary>
 /// Pluggable market data feed that produces quote ticks.
-/// Swap this for a real provider (Polygon, Alpha Vantage, etc.) without changing the worker.
+/// Swap the active provider via <c>MarketDataFeed:Provider</c> in appsettings without changing the worker.
 /// </summary>
 public interface IMarketDataFeed
 {

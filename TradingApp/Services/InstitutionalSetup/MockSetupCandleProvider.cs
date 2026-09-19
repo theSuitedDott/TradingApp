@@ -8,7 +8,7 @@ namespace TradingApp.Services.InstitutionalSetup;
 /// a clear H4 uptrend, a three-push corrective exhaustion with RSI divergence, a liquidity
 /// sweep, a displacement candle, a Fair Value Gap, and falling DXY/VIX for confirmation.
 /// </summary>
-public sealed class MockSetupCandleProvider : IMockSetupCandleProvider
+public sealed class MockSetupCandleProvider : IMockSetupCandleProvider, ISetupCandleProvider
 {
     private static readonly DateTimeOffset Anchor = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -27,6 +27,14 @@ public sealed class MockSetupCandleProvider : IMockSetupCandleProvider
             BuildVix(),
             rsiPeriod);
     }
+
+    /// <inheritdoc />
+    public Task<InstitutionalSetupInput> BuildInputAsync(
+        string symbol,
+        string exchange,
+        int rsiPeriod,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(BuildInput(symbol, exchange, rsiPeriod));
 
     // Clear H4 uptrend: rising swing highs and rising swing lows.
     private static IReadOnlyList<Candle> BuildHigherTimeframe() =>

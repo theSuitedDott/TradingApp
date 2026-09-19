@@ -13,7 +13,7 @@ public static class SetupMapper
     private static readonly IReadOnlyDictionary<string, string> GermanLabels = new Dictionary<string, string>
     {
         [ConditionNames.Trend] = "Klarer H4-Trend",
-        [ConditionNames.Exhaustion] = "Erschöpfung (3 Pushes + RSI-Divergenz)",
+        [ConditionNames.Exhaustion] = "3-Push (Einstieg am 3. Push, Ziel vorheriger Peak)",
         [ConditionNames.LiquiditySweep] = "Liquiditäts-Sweep (Inducement)",
         [ConditionNames.Displacement] = "Displacement-Kerze",
         [ConditionNames.FairValueGap] = "Fair Value Gap (Einstieg)",
@@ -39,6 +39,10 @@ public static class SetupMapper
             decimal.Round(result.Confidence, 2),
             result.IsSetup,
             conditions,
+            result.DetectedAt,
+            result.EntryPrice,
+            result.StopLossPrice,
+            result.TakeProfitPrice,
             opportunity);
     }
 

@@ -2,12 +2,13 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.Net.Http.Headers;
 using TradingApp.Configuration;
 using TradingApp.Constants;
 using TradingApp.Data;
 using TradingApp.Services;
-
 using TradingApp.Services.HistoricalData;
+using TradingApp.Services.OandaOrder;
 
 namespace TradingApp.Extensions;
 
@@ -27,14 +28,35 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddApplicationServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         services.AddScoped<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthService, AuthService>();
-        
+
+        services.AddOptions<OandaSettings>()
+            .Bind(configuration.GetSection(OandaSettings.SectionName));
+
         services.AddHttpClient("YahooFinance");
-        services.AddScoped<IHistoricalDataService, YahooFinanceHistoricalDataService>();
+
+        services.AddHttpClient("Oanda", (sp, client) =>
+        {
+            var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<OandaSettings>>().Value;
+            client.BaseAddress = new Uri(settings.BaseUrl.TrimEnd('/') + "/");
+            if (!string.IsNullOrWhiteSpace(settings.ApiToken))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", settings.ApiToken);
+            }
+        });
+
+        services.AddScoped<YahooFinanceHistoricalDataService>();
+        services.AddScoped<OandaHistoricalDataService>();
+        services.AddScoped<IHistoricalDataService, RoutingHistoricalDataService>();
+
+        services.AddScoped<IOandaOrderService, OandaOrderService>();
 
         return services;
     }

@@ -20,6 +20,7 @@ namespace TradingApp.Controllers;
 [Route("api/v1/setups")]
 public sealed class InstitutionalSetupController(
     IInstitutionalSetupScanner scanner,
+    IPositionExitScanner exitScanner,
     ITradeOpportunityStore opportunityStore,
     ISetupExecutionService executionService,
     ISetupBacktestService backtestService,
@@ -50,14 +51,15 @@ public sealed class InstitutionalSetupController(
     public ActionResult<IReadOnlyList<TradeOpportunityDto>> GetOpportunities()
         => Ok(opportunityStore.GetAll());
 
-    /// <summary>Returns OHLC candles for the candlestick chart (Yahoo or mock data).</summary>
+    /// <summary>Returns OHLC candles: Yahoo historical baseline + optional OANDA live tick on last candle.</summary>
     [HttpGet("candles")]
     [ProducesResponseType(typeof(ChartDataDto), StatusCodes.Status200OK)]
     [AllowAnonymous]
     public async Task<IActionResult> GetCandles(
-        [FromQuery] string symbol = "EURUSD=X",
+        [FromQuery] string symbol = "EUR_USD",
         [FromQuery] string interval = "1h",
         [FromQuery] string range = "60d",
+        [FromQuery] int count = 1000,
         [FromQuery] bool mock = false,
         [FromQuery] bool live = false,
         [FromQuery] bool includeLevels = false,
@@ -65,6 +67,7 @@ public sealed class InstitutionalSetupController(
     {
         try
         {
+            var candleCount = count > 0 ? count : 1000;
             var data = await chartService.GetChartDataAsync(
                 symbol,
                 interval,
@@ -72,6 +75,7 @@ public sealed class InstitutionalSetupController(
                 mock,
                 live,
                 includeLevels,
+                candleCount,
                 cancellationToken);
             if (data.Candles.Count == 0)
             {
@@ -86,11 +90,20 @@ public sealed class InstitutionalSetupController(
         }
     }
 
-    /// <summary>Runs a backtest over the last 60 days using real Yahoo Finance data, returning partial setups too.</summary>
+    /// <summary>Manually checks all open positions for stop-loss / take-profit sell signals.</summary>
+    [HttpPost("check-exits")]
+    [ProducesResponseType(typeof(IReadOnlyList<ExitSignalAlertDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CheckExits(CancellationToken cancellationToken)
+    {
+        var alerts = await exitScanner.ScanAsync(cancellationToken);
+        return Ok(alerts);
+    }
+
+    /// <summary>Runs a backtest over the last 60 days (OANDA forex + Yahoo indices), returning partial setups too.</summary>
     [HttpGet("backtest")]
     [ProducesResponseType(typeof(IReadOnlyList<SetupAnalysisDto>), StatusCodes.Status200OK)]
     [AllowAnonymous] // Added to fix 401
-    public async Task<IActionResult> Backtest([FromQuery] string symbol = "EURUSD=X", CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Backtest([FromQuery] string symbol = "EUR_USD", CancellationToken cancellationToken = default)
     {
         try
         {

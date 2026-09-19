@@ -12,6 +12,8 @@ public sealed record PositionResponse(
     decimal Quantity,
     decimal AverageEntryPrice,
     decimal? CurrentPrice,
+    decimal? StopLossPrice,
+    decimal? TakeProfitPrice,
     decimal UnrealizedPnL,
     decimal RealizedPnL,
     DateTimeOffset OpenedAt,

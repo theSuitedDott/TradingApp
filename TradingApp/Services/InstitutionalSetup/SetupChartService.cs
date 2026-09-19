@@ -2,16 +2,20 @@ using Microsoft.Extensions.Options;
 using TradingApp.Configuration;
 using TradingApp.DTOs.Setup;
 using TradingApp.Services.HistoricalData;
+using static TradingApp.Services.HistoricalData.ForexSymbolNormalizer;
 using TradingApp.Services.PaperTrading;
 using TradingApp.TradingEngine.Models;
 
 namespace TradingApp.Services.InstitutionalSetup;
 
 /// <summary>
-/// Maps historical or mock candles to chart DTOs for the frontend candlestick chart.
+/// Chart pipeline: Twelve Data loads forex historical candles (primary, free tier),
+/// Yahoo Finance is the fallback for non-forex symbols and when Twelve Data is not configured.
+/// Finnhub live ticks update the current candle via <see cref="ChartLivePriceHelper"/>.
 /// </summary>
 public sealed class SetupChartService(
-    IHistoricalDataService historicalDataService,
+    TwelveDataCandleService twelveDataCandleService,
+    YahooFinanceHistoricalDataService yahooHistoricalDataService,
     IMockSetupCandleProvider mockProvider,
     IInstitutionalSetupScanner scanner,
     ITradeOpportunityStore opportunityStore,
@@ -28,6 +32,7 @@ public sealed class SetupChartService(
         bool useMock,
         bool applyLivePrice = false,
         bool includeTradeLevels = false,
+        int? candleCount = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(symbol);
@@ -56,17 +61,43 @@ public sealed class SetupChartService(
         }
         else
         {
-            var yahooInterval = interval.Equals("4h", StringComparison.OrdinalIgnoreCase) ? "1h" : interval;
-            var lookback = applyLivePrice ? "5d" : range;
-            var h1 = await historicalDataService.GetHistoricalCandlesAsync(symbol, yahooInterval, lookback, cancellationToken);
+            var targetCount = candleCount ?? ChartHistoricalSettings.DefaultCandleCount;
 
-            candles = interval.Equals("4h", StringComparison.OrdinalIgnoreCase)
-                ? CandleAggregator.Aggregate(h1, TimeSpan.FromHours(4))
-                : h1;
+            if (IsOandaForex(symbol) && twelveDataCandleService.IsConfigured)
+            {
+                // Twelve Data: free tier supports forex intraday (800 req/day)
+                var oandaSymbol = ToOandaInstrument(symbol);
+                var raw = await twelveDataCandleService.GetCandlesAsync(
+                    oandaSymbol, interval, targetCount, cancellationToken);
 
-            chartSymbol = symbol;
-            exchange = "Yahoo";
-            source = applyLivePrice ? "Yahoo (live)" : "Yahoo";
+                candles = raw.Count > 0 ? raw : await FallbackToYahoo();
+
+                chartSymbol = oandaSymbol;
+                exchange = "OANDA";
+                source = applyLivePrice
+                    ? (raw.Count > 0 ? "TwelveData · live" : "Yahoo · live")
+                    : (raw.Count > 0 ? "TwelveData" : "Yahoo");
+            }
+            else
+            {
+                candles = await FallbackToYahoo();
+
+                chartSymbol = IsOandaForex(symbol) ? ToOandaInstrument(symbol) : symbol;
+                exchange = IsOandaForex(symbol) ? "OANDA" : "Yahoo";
+                source = applyLivePrice ? "Yahoo · live" : "Yahoo";
+            }
+
+            async Task<IReadOnlyList<TradingApp.TradingEngine.Models.Candle>> FallbackToYahoo()
+            {
+                var fetchInterval = interval.Equals("4h", StringComparison.OrdinalIgnoreCase) ? "1h" : interval;
+                var yahooSymbol = IsOandaForex(symbol) ? ToYahooSymbol(symbol) : symbol;
+                var fetchRange = IsOandaForex(symbol) ? WidenRange(range, minDays: 7) : range;
+                var raw = await yahooHistoricalDataService.GetHistoricalCandlesAsync(
+                    yahooSymbol, fetchInterval, fetchRange, candleCount: null, cancellationToken);
+                return interval.Equals("4h", StringComparison.OrdinalIgnoreCase)
+                    ? CandleAggregator.Aggregate(raw, TimeSpan.FromHours(4)).TakeLast(targetCount).ToList()
+                    : raw.TakeLast(targetCount).ToList();
+            }
         }
 
         var dtoCandles = candles.Select(ToDto).ToList();
@@ -86,21 +117,27 @@ public sealed class SetupChartService(
         if (applyLivePrice)
         {
             var quoteSymbol = useMock ? _settings.Symbol : chartSymbol;
-            var quoteExchange = useMock ? _settings.Exchange : MapExchangeForQuote(chartSymbol);
+            var quoteExchange = useMock ? _settings.Exchange : MapExchangeForLiveQuote(chartSymbol);
 
             if (quoteStore.TryGetPrice(quoteSymbol, quoteExchange, out var cached))
             {
-                liveAt = DateTimeOffset.UtcNow;
-                livePrice = cached;
-                (dtoCandles, livePrice, liveAt) = ChartLivePriceHelper.Apply(dtoCandles, cached, liveAt.Value);
-                isLive = true;
+                var lastClose = dtoCandles.Count > 0 ? dtoCandles[^1].Close : cached;
+                var deviation = Math.Abs(cached - lastClose) / Math.Max(Math.Abs(lastClose), 0.000001m);
+                if (deviation <= 0.02m)
+                {
+                    liveAt = DateTimeOffset.UtcNow;
+                    var liveResult = ChartLivePriceHelper.Apply(dtoCandles, cached, liveAt.Value);
+                    dtoCandles = liveResult.Candles.ToList();
+                    livePrice = liveResult.LivePrice;
+                    liveAt = liveResult.LiveAt;
+                    isLive = true;
+                }
             }
             else if (!useMock && dtoCandles.Count > 0)
             {
                 var last = dtoCandles[^1];
                 livePrice = last.Close;
                 liveAt = last.Time;
-                isLive = true;
             }
         }
 
@@ -147,8 +184,19 @@ public sealed class SetupChartService(
         return (analysis.Opportunity.EntryPrice, analysis.Opportunity.StopLossPrice, analysis.Opportunity.TakeProfitPrice);
     }
 
-    private static string MapExchangeForQuote(string symbol) =>
-        symbol.Contains('=') || symbol.Length > 6 ? "FOREX" : "YAHOO";
+    private static string MapExchangeForLiveQuote(string symbol) =>
+        IsOandaForex(symbol) ? "OANDA" : "YAHOO";
+
+    /// <summary>
+    /// Ensures the range covers at least <paramref name="minDays"/> days so weekends
+    /// and Yahoo data gaps don't cut off the most recent trading day.
+    /// </summary>
+    private static string WidenRange(string range, int minDays = 5)
+    {
+        if (range.EndsWith('d') && int.TryParse(range[..^1], out var days) && days < minDays)
+            return $"{minDays}d";
+        return range;
+    }
 
     private static ChartCandleDto ToDto(Candle candle) =>
         new(candle.OpenTime, candle.Open, candle.High, candle.Low, candle.Close);

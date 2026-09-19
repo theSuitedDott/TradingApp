@@ -22,7 +22,7 @@ builder.Services.Configure<AdminSeedOptions>(
     builder.Configuration.GetSection(AdminSeedOptions.SectionName));
 
 builder.Services.AddPersistence(builder.Configuration);
-builder.Services.AddApplicationServices();
+builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddPaperTrading(builder.Configuration);
 builder.Services.AddMarketDataFeed(builder.Configuration);
 builder.Services.AddInstitutionalSetupScanner(builder.Configuration);
@@ -61,7 +61,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// In Development nutzen wir HTTP (5181) — HTTPS-Umleitung bricht Login/Fetch wegen untrusted dev cert.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseCors("AllowFrontendDev");
 app.UseAuthentication();
 app.UseAuthorization();

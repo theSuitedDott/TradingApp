@@ -1,6 +1,9 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using TradingApp.Configuration;
 using TradingApp.DTOs.Setup;
+using TradingApp.Services.OandaOrder;
+using TradingApp.Services.PaperTrading;
 using TradingApp.TradingEngine.Setup;
 
 namespace TradingApp.Services.InstitutionalSetup;
@@ -8,13 +11,17 @@ namespace TradingApp.Services.InstitutionalSetup;
 /// <summary>
 /// Orchestrates the institutional setup evaluation, de-duplicates opportunities,
 /// stores them in memory and broadcasts them to subscribers.
+/// When <c>Oanda:LiveOrderEnabled</c> is true, each 6/6 setup also places a live
+/// market order via the OANDA v20 REST API.
 /// </summary>
 public sealed class InstitutionalSetupScanner(
     IInstitutionalSetupStrategy strategy,
     IMockSetupCandleProvider candleProvider,
     ITradeOpportunityStore opportunityStore,
     ISetupOpportunityNotifier notifier,
+    IServiceScopeFactory scopeFactory,
     IOptions<InstitutionalSetupSettings> options,
+    IOptions<OandaSettings> oandaOptions,
     ILogger<InstitutionalSetupScanner> logger) : IInstitutionalSetupScanner
 {
     private readonly InstitutionalSetupSettings _settings = options.Value;
@@ -33,7 +40,13 @@ public sealed class InstitutionalSetupScanner(
     /// <inheritdoc />
     public async Task<TradeOpportunityDto?> ScanAsync(CancellationToken cancellationToken = default)
     {
-        var input = candleProvider.BuildInput(_settings.Symbol, _settings.Exchange, _settings.RsiPeriod);
+        // Single scope for all scoped services in this scan cycle.
+        await using var scope = scopeFactory.CreateAsyncScope();
+
+        var provider = scope.ServiceProvider.GetRequiredService<ISetupCandleProvider>();
+        var input = await provider.BuildInputAsync(
+            _settings.Symbol, _settings.Exchange, _settings.RsiPeriod, cancellationToken);
+
         var result = strategy.Evaluate(input);
         if (!result.IsSetup)
         {
@@ -43,6 +56,18 @@ public sealed class InstitutionalSetupScanner(
         var opportunity = SetupMapper.ToOpportunity(result);
         if (opportunityStore.HasActive(opportunity.Symbol, opportunity.Direction))
         {
+            logger.LogDebug(
+                "Skipping setup broadcast for {Symbol} — active opportunity already pending.",
+                opportunity.Symbol);
+            return null;
+        }
+
+        var positionLookup = scope.ServiceProvider.GetRequiredService<IOpenPositionLookup>();
+        if (await positionLookup.HasOpenPositionAsync(opportunity.Symbol, opportunity.Exchange, cancellationToken))
+        {
+            logger.LogDebug(
+                "Skipping setup broadcast for {Symbol} — open position exists (no repeat buy signals).",
+                opportunity.Symbol);
             return null;
         }
 
@@ -58,6 +83,50 @@ public sealed class InstitutionalSetupScanner(
             opportunity.StopLossPrice,
             opportunity.TakeProfitPrice);
 
+        await TryPlaceLiveOrderAsync(scope, opportunity, cancellationToken);
+
         return opportunity;
+    }
+
+    private async Task TryPlaceLiveOrderAsync(
+        IServiceScope scope,
+        TradeOpportunityDto opportunity,
+        CancellationToken cancellationToken)
+    {
+        var oanda = oandaOptions.Value;
+        if (!oanda.LiveOrderEnabled || !oanda.IsConfigured)
+        {
+            return;
+        }
+
+        var orderService = scope.ServiceProvider.GetRequiredService<IOandaOrderService>();
+
+        var lotsInUnits = Math.Round(oanda.DefaultLots * 100_000m, 0);
+        var units = opportunity.Side.Equals("Buy", StringComparison.OrdinalIgnoreCase)
+            ? lotsInUnits
+            : -lotsInUnits;
+
+        var instrument = TradingApp.Services.HistoricalData.ForexSymbolNormalizer
+            .ToOandaInstrument(opportunity.Symbol);
+
+        var result = await orderService.PlaceMarketOrderAsync(
+            instrument,
+            units,
+            opportunity.StopLossPrice,
+            opportunity.TakeProfitPrice,
+            cancellationToken);
+
+        if (result.IsSuccess)
+        {
+            logger.LogInformation(
+                "Live OANDA order placed for {Symbol}: TradeId={TradeId}, Price={Price}.",
+                instrument, result.Value!.TradeId, result.Value.OpenPrice);
+        }
+        else
+        {
+            logger.LogError(
+                "Live OANDA order failed for {Symbol}: [{Code}] {Message}.",
+                instrument, result.ErrorCode, result.ErrorMessage);
+        }
     }
 }

@@ -60,6 +60,8 @@ internal static class PaperTradingMapper
             position.Quantity,
             position.AverageEntryPrice,
             position.CurrentPrice,
+            position.StopLossPrice,
+            position.TakeProfitPrice,
             position.UnrealizedPnL,
             position.RealizedPnL,
             position.OpenedAt,

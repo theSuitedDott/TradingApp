@@ -12,25 +12,20 @@ public sealed class MarketDataFeedSettings
     /// <summary>
     /// Feed provider to use.
     /// <list type="bullet">
-    ///   <item><see cref="FeedProvider.Simulated"/> — built-in random-walk generator.</item>
-    ///   <item><see cref="FeedProvider.Polygon"/> — Polygon.io WebSocket (future).</item>
+    ///   <item><see cref="FeedProvider.Simulated"/> — built-in random-walk generator (offline/demo).</item>
+    ///   <item><see cref="FeedProvider.Finnhub"/> — Finnhub REST quote poll, requires <c>Finnhub:ApiKey</c>.</item>
+    ///   <item><see cref="FeedProvider.Oanda"/> — OANDA REST pricing poll, requires <c>Oanda:ApiToken</c>.</item>
     /// </list>
     /// </summary>
-    public FeedProvider Provider { get; init; } = FeedProvider.Simulated;
+    public FeedProvider Provider { get; set; } = FeedProvider.Simulated;
 
     /// <summary>Instruments to subscribe to.</summary>
     [MinLength(1)]
-    public List<SymbolFeedConfig> Symbols { get; init; } = [];
+    public List<SymbolFeedConfig> Symbols { get; set; } = [];
 
-    /// <summary>Milliseconds between ticks (simulated) or reconnect delay.</summary>
+    /// <summary>Milliseconds between ticks (simulated) or poll interval for REST providers.</summary>
     [Range(50, 60_000)]
-    public int IntervalMs { get; init; } = 1_000;
-
-    /// <summary>API key for external providers (resolved from environment in production).</summary>
-    public string? ApiKey { get; init; }
-
-    /// <summary>WebSocket endpoint for external providers.</summary>
-    public string? WebSocketUrl { get; init; }
+    public int IntervalMs { get; init; } = 5_000;
 
     /// <summary>Whether the feed should start automatically on application startup.</summary>
     public bool AutoStart { get; init; } = true;
@@ -44,6 +39,9 @@ public enum FeedProvider
     /// <summary>Built-in random-walk price simulator (development / demo).</summary>
     Simulated = 0,
 
-    /// <summary>Polygon.io WebSocket feed (future implementation).</summary>
-    Polygon = 1
+    /// <summary>OANDA REST pricing poll for supported forex pairs.</summary>
+    Oanda = 2,
+
+    /// <summary>Finnhub REST quote poll for supported forex pairs.</summary>
+    Finnhub = 3
 }

@@ -8,8 +8,8 @@ public static class ConditionNames
     /// <summary>Clear higher-timeframe (H4) trend.</summary>
     public const string Trend = "H4 Trend";
 
-    /// <summary>Three diminishing counter-trend pushes with RSI divergence.</summary>
-    public const string Exhaustion = "Exhaustion (3 pushes + RSI divergence)";
+    /// <summary>Three diminishing counter-trend pushes (entry at 3rd push, target prior peak).</summary>
+    public const string Exhaustion = "Exhaustion (3 pushes)";
 
     /// <summary>Liquidity sweep / inducement on the final push.</summary>
     public const string LiquiditySweep = "Liquidity Sweep (Inducement)";

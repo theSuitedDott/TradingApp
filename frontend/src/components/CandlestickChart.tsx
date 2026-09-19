@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react'
-import { createChart, IChartApi, IPriceLine, ISeriesApi, CandlestickData, UTCTimestamp, SeriesMarker } from 'lightweight-charts'
+import { createChart, IChartApi, IPriceLine, ISeriesApi, CandlestickData, UTCTimestamp, TickMarkType } from 'lightweight-charts'
+import { type ChartSignalMarker, toSeriesMarkers } from '../utils/chartSignalMarkers'
 
 export type ChartCandle = {
   time: string
@@ -18,6 +19,7 @@ type Levels = {
 type Props = {
   candles: ChartCandle[]
   levels?: Levels
+  signalMarkers?: ChartSignalMarker[]
   height?: number
   livePrice?: number | null
 }
@@ -26,7 +28,27 @@ function toUtc(time: string): UTCTimestamp {
   return Math.floor(new Date(time).getTime() / 1000) as UTCTimestamp
 }
 
-export default function CandlestickChart({ candles, levels, height = 420, livePrice }: Props) {
+const BERLIN_TZ = 'Europe/Berlin'
+
+function formatBerlinTime(unixSeconds: number, tickMarkType: TickMarkType): string {
+  const date = new Date(unixSeconds * 1000)
+  if (tickMarkType === TickMarkType.Time) {
+    return date.toLocaleTimeString('de-DE', { timeZone: BERLIN_TZ, hour: '2-digit', minute: '2-digit' })
+  }
+  if (tickMarkType === TickMarkType.DayOfMonth) {
+    return date.toLocaleDateString('de-DE', { timeZone: BERLIN_TZ, day: '2-digit', month: '2-digit' })
+  }
+  if (tickMarkType === TickMarkType.Month) {
+    return date.toLocaleDateString('de-DE', { timeZone: BERLIN_TZ, month: 'short', year: '2-digit' })
+  }
+  return date.toLocaleDateString('de-DE', { timeZone: BERLIN_TZ, year: 'numeric' })
+}
+
+function roundPrice(value: number): number {
+  return Math.round(value * 10000) / 10000
+}
+
+export default function CandlestickChart({ candles, levels, signalMarkers = [], height = 420, livePrice }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -49,7 +71,23 @@ export default function CandlestickChart({ candles, levels, height = 420, livePr
       },
       crosshair: { mode: 1 },
       rightPriceScale: { borderColor: '#374151' },
-      timeScale: { borderColor: '#374151', timeVisible: true, secondsVisible: false }
+      localization: {
+        timeFormatter: (unixSeconds: UTCTimestamp) => {
+          const date = new Date(unixSeconds * 1000)
+          return date.toLocaleString('de-DE', {
+            timeZone: BERLIN_TZ,
+            day: '2-digit', month: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+          })
+        }
+      },
+      timeScale: {
+        borderColor: '#374151',
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (time: UTCTimestamp, tickMarkType: TickMarkType) =>
+          formatBerlinTime(time as number, tickMarkType)
+      }
     })
 
     const series = chart.addCandlestickSeries({
@@ -57,7 +95,12 @@ export default function CandlestickChart({ candles, levels, height = 420, livePr
       downColor: '#ef4444',
       borderVisible: false,
       wickUpColor: '#10b981',
-      wickDownColor: '#ef4444'
+      wickDownColor: '#ef4444',
+      priceFormat: {
+        type: 'price',
+        precision: 4,
+        minMove: 0.0001
+      }
     })
 
     chartRef.current = chart
@@ -84,21 +127,28 @@ export default function CandlestickChart({ candles, levels, height = 420, livePr
 
     const data: CandlestickData[] = candles.map(c => ({
       time: toUtc(c.time),
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close
+      open: roundPrice(c.open),
+      high: roundPrice(c.high),
+      low: roundPrice(c.low),
+      close: roundPrice(c.close)
     }))
 
-    if (lastCandleCountRef.current > 0 && data.length === lastCandleCountRef.current) {
-      series.update(data[data.length - 1])
-    } else {
-      series.setData(data)
+    const candleTimes = new Set(data.map(d => d.time as number))
+    const shouldFitContent = data.length !== lastCandleCountRef.current
+    series.setData(data)
+    lastCandleCountRef.current = data.length
+
+    if (shouldFitContent) {
       chartRef.current?.timeScale().fitContent()
     }
-
-    lastCandleCountRef.current = data.length
   }, [candles])
+
+  useEffect(() => {
+    const series = seriesRef.current
+    if (!series || candles.length === 0) return
+    const candleTimes = new Set(candles.map(c => toUtc(c.time) as number))
+    series.setMarkers(toSeriesMarkers(signalMarkers, candleTimes))
+  }, [candles, signalMarkers])
 
   useEffect(() => {
     const series = seriesRef.current
@@ -109,7 +159,7 @@ export default function CandlestickChart({ candles, levels, height = 420, livePr
 
     const addLine = (price: number, color: string, title: string) => {
       priceLinesRef.current.push(series.createPriceLine({
-        price,
+        price: roundPrice(price),
         color,
         lineWidth: 2,
         title,
@@ -124,44 +174,6 @@ export default function CandlestickChart({ candles, levels, height = 420, livePr
       addLine(livePrice, '#f59e0b', 'Live')
     }
   }, [levels, livePrice])
-
-  useEffect(() => {
-    const series = seriesRef.current
-    if (!series || candles.length === 0) return
-
-    const markerTime = toUtc(candles[candles.length - 1].time)
-    const markers: SeriesMarker<UTCTimestamp>[] = []
-
-    if (levels?.entry != null) {
-      markers.push({
-        time: markerTime,
-        position: 'belowBar',
-        color: '#3b82f6',
-        shape: 'arrowUp',
-        text: 'Entry'
-      })
-    }
-    if (levels?.stopLoss != null) {
-      markers.push({
-        time: markerTime,
-        position: 'aboveBar',
-        color: '#ef4444',
-        shape: 'arrowDown',
-        text: 'Exit SL'
-      })
-    }
-    if (levels?.takeProfit != null) {
-      markers.push({
-        time: markerTime,
-        position: 'aboveBar',
-        color: '#10b981',
-        shape: 'circle',
-        text: 'Exit TP'
-      })
-    }
-
-    series.setMarkers(markers)
-  }, [candles, levels])
 
   return (
     <div

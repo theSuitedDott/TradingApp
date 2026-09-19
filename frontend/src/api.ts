@@ -25,10 +25,17 @@ async function request(path: string, options: RequestInit = {}, config: RequestC
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const url = API_URL ? API_URL + path : path
-  const res = await fetch(url, {
-    ...options,
-    headers: { ...headers, ...(options.headers as any) }
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers: { ...headers, ...(options.headers as any) }
+    })
+  } catch {
+    throw new Error(
+      'Verbindung zum Backend fehlgeschlagen. Läuft die API auf http://localhost:5181?'
+    )
+  }
   if (!res.ok) {
     const txt = await res.text()
     throw new Error(`HTTP ${res.status}: ${txt}`)
@@ -83,11 +90,13 @@ export const setups = {
     const query = params.toString()
     return request(`/api/v1/setups/analyze${query ? `?${query}` : ''}`, {}, setupsPublic)
   },
-  backtest: (symbol: string) => request(`/api/v1/setups/backtest?symbol=${symbol}`, {}, setupsPublic),
+  backtest: (symbol: string) =>
+    request(`/api/v1/setups/backtest?symbol=${encodeURIComponent(symbol)}`, {}, setupsPublic),
   candles: (params: {
     symbol: string
     interval?: string
     range?: string
+    count?: number
     mock?: boolean
     live?: boolean
     includeLevels?: boolean
@@ -95,6 +104,7 @@ export const setups = {
     const q = new URLSearchParams({ symbol: params.symbol })
     if (params.interval) q.set('interval', params.interval)
     if (params.range) q.set('range', params.range)
+    if (params.count != null) q.set('count', String(params.count))
     if (params.mock) q.set('mock', 'true')
     if (params.live) q.set('live', 'true')
     if (params.includeLevels) q.set('includeLevels', 'true')
@@ -105,6 +115,8 @@ export const setups = {
     request(`/api/v1/setups/opportunities/${opportunityId}/execute`, {
       method: 'POST',
       body: JSON.stringify(payload)
-    })
+    }),
+  checkExits: () =>
+    request('/api/v1/setups/check-exits', { method: 'POST' })
 }
 
